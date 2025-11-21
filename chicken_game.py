@@ -30,6 +30,8 @@ PINK = (255, 192, 203)
 # 道具類型
 POWERUP_SPEED = "speed"  # 加速道具
 POWERUP_SCARE = "scare"  # 驅趕老鷹
+POWERUP_SHIELD = "shield"  # 防護罩
+POWERUP_FREEZE = "freeze"  # 時間凍結
 
 # Boids 演算法參數
 BOID_SEPARATION_DISTANCE = GRID_SIZE * 1.2  # 分離距離(減少讓小雞可以更靠近)
@@ -190,7 +192,7 @@ class Chick:
         self.animation_frame += 1
         self.hop_offset = abs(math.sin(self.animation_frame * 0.4)) * 2
     
-    def apply_boids(self, chicks, hen_pos):
+    def apply_boids(self, chicks, hen_pos, speed_multiplier=1.0):
         """應用 Boids 演算法"""
         separation = self.separation(chicks)
         alignment = self.alignment(chicks)
@@ -202,9 +204,10 @@ class Chick:
         
         # 限制速度
         speed = math.sqrt(self.vx ** 2 + self.vy ** 2)
-        if speed > self.max_speed:
-            self.vx = (self.vx / speed) * self.max_speed
-            self.vy = (self.vy / speed) * self.max_speed
+        effective_max_speed = self.max_speed * speed_multiplier
+        if speed > effective_max_speed:
+            self.vx = (self.vx / speed) * effective_max_speed
+            self.vy = (self.vy / speed) * effective_max_speed
         
         # 更新位置
         self.x += self.vx
@@ -457,9 +460,13 @@ class FollowingEgg:
 
 class PowerUp:
     """道具類別"""
-    def __init__(self, powerup_type):
-        self.x = random.randint(0, (WINDOW_WIDTH // GRID_SIZE) - 1) * GRID_SIZE
-        self.y = random.randint(0, (WINDOW_HEIGHT // GRID_SIZE) - 1) * GRID_SIZE
+    def __init__(self, powerup_type, x=None, y=None):
+        if x is not None and y is not None:
+            self.x = x
+            self.y = y
+        else:
+            self.x = random.randint(0, (WINDOW_WIDTH // GRID_SIZE) - 1) * GRID_SIZE
+            self.y = random.randint(0, (WINDOW_HEIGHT // GRID_SIZE) - 1) * GRID_SIZE
         self.size = GRID_SIZE
         self.type = powerup_type
         self.duration = 300  # 效果持續時間 (5秒)
@@ -509,6 +516,27 @@ class PowerUp:
             pygame.draw.rect(screen, DARK_RED, (int(self.x + GRID_SIZE // 2 - 1.5), int(self.y + 6), 3, 7), 1)
             # 光暈效果(脈動)
             pygame.draw.circle(screen, (255, 220, 230), (int(self.x + GRID_SIZE // 2 - 2), int(self.y + GRID_SIZE // 2 - 2)), int(3 + pulse * 0.3))
+        elif self.type == POWERUP_SHIELD:
+            # 防護罩道具 - 盾牌圖案
+            pygame.draw.circle(screen, (100, 100, 255), (int(self.x + GRID_SIZE // 2), int(self.y + GRID_SIZE // 2)), int(GRID_SIZE // 2 + pulse), 2)
+            pygame.draw.circle(screen, (200, 200, 255), (int(self.x + GRID_SIZE // 2), int(self.y + GRID_SIZE // 2)), GRID_SIZE // 2 - 2)
+            # 十字盾牌標誌
+            pygame.draw.rect(screen, WHITE, (int(self.x + GRID_SIZE // 2 - 2), int(self.y + 4), 4, 12))
+            pygame.draw.rect(screen, WHITE, (int(self.x + 4), int(self.y + GRID_SIZE // 2 - 2), 12, 4))
+            # 光暈效果
+            pygame.draw.circle(screen, (180, 180, 255), (int(self.x + GRID_SIZE // 2 - 2), int(self.y + GRID_SIZE // 2 - 2)), int(3 + pulse * 0.3))
+        elif self.type == POWERUP_FREEZE:
+            # 凍結道具 - 雪花圖案
+            pygame.draw.circle(screen, (0, 200, 255), (int(self.x + GRID_SIZE // 2), int(self.y + GRID_SIZE // 2)), int(GRID_SIZE // 2 + pulse), 2)
+            pygame.draw.circle(screen, (150, 230, 255), (int(self.x + GRID_SIZE // 2), int(self.y + GRID_SIZE // 2)), GRID_SIZE // 2 - 2)
+            # 雪花圖案
+            center = (int(self.x + GRID_SIZE // 2), int(self.y + GRID_SIZE // 2))
+            pygame.draw.line(screen, WHITE, (center[0] - 6, center[1]), (center[0] + 6, center[1]), 2)
+            pygame.draw.line(screen, WHITE, (center[0], center[1] - 6), (center[0], center[1] + 6), 2)
+            pygame.draw.line(screen, WHITE, (center[0] - 4, center[1] - 4), (center[0] + 4, center[1] + 4), 2)
+            pygame.draw.line(screen, WHITE, (center[0] - 4, center[1] + 4), (center[0] + 4, center[1] - 4), 2)
+            # 光暈效果
+            pygame.draw.circle(screen, (200, 240, 255), (int(self.x + GRID_SIZE // 2 - 2), int(self.y + GRID_SIZE // 2 - 2)), int(3 + pulse * 0.3))
 
 class Eagle:
     """老鷹類別"""
@@ -531,7 +559,7 @@ class Eagle:
         self.size = GRID_SIZE
         self.is_special = is_special
         self.is_hovering = is_hovering  # 是否為盤旋老鷹
-        self.base_speed = 2.5 if is_special else 2.0
+        self.base_speed = 1.8 if is_special else 1.2  # 降低起始速度
         self.speed = self.base_speed
         self.has_caught = False  # 是否已抓到小雞
         self.caught_chick = None  # 被抓到的小雞
@@ -817,7 +845,7 @@ class Game:
     def spawn_powerup(self):
         """生成道具"""
         # 隨機選擇道具類型
-        powerup_type = random.choice([POWERUP_SPEED, POWERUP_SCARE])
+        powerup_type = random.choice([POWERUP_SPEED, POWERUP_SCARE, POWERUP_SHIELD, POWERUP_FREEZE])
         self.powerups.append(PowerUp(powerup_type))
     
     def activate_powerup(self, powerup_type):
@@ -832,6 +860,12 @@ class Game:
                 if not eagle.has_caught:
                     eagle.leaving = True
             self.active_powerups[POWERUP_SCARE] = 60  # 1 秒 (只是標記效果)
+        elif powerup_type == POWERUP_SHIELD:
+            # 開啟防護罩
+            self.active_powerups[POWERUP_SHIELD] = 99999  # 持續直到被消耗
+        elif powerup_type == POWERUP_FREEZE:
+            # 凍結老鷹 5 秒
+            self.active_powerups[POWERUP_FREEZE] = 300  # 5 秒
     
     def update_powerups(self):
         """更新道具效果"""
@@ -890,13 +924,14 @@ class Game:
         
         # 使用 Boids 更新小雞位置
         for chick in self.chicks:
-            chick.apply_boids(self.chicks, current_pos)
+            chick.apply_boids(self.chicks, current_pos, self.hen.speed_boost)
         
         # 更新跟隨的蛋位置
-        if len(self.position_history) > GRID_SIZE:
+        follow_spacing = 12  # 縮短跟隨距離 (原為 GRID_SIZE = 20)
+        if len(self.position_history) > follow_spacing:
             for i, following_egg in enumerate(self.following_eggs[:]):
                 # 每個蛋跟隨在小雞之後
-                history_index = -(len(self.chicks) + i + 1) * GRID_SIZE
+                history_index = -(len(self.chicks) + i + 1) * follow_spacing
                 if abs(history_index) <= len(self.position_history):
                     pos = self.position_history[history_index]
                     following_egg.update_position(pos[0], pos[1])
@@ -904,16 +939,24 @@ class Game:
                 # 檢查是否準備好孵化
                 if following_egg.is_ready_to_hatch():
                     self.following_eggs.remove(following_egg)
-                    # 孵化成小雞
-                    new_chick = Chick(following_egg.x, following_egg.y)
-                    self.chicks.append(new_chick)
+                    
+                    # 20% 機率孵化出道具
+                    if random.random() < 0.2:
+                        powerup_type = random.choice([POWERUP_SPEED, POWERUP_SCARE])
+                        # 道具出現在蛋的位置
+                        self.powerups.append(PowerUp(powerup_type, following_egg.x, following_egg.y))
+                    else:
+                        # 孵化成小雞
+                        new_chick = Chick(following_egg.x, following_egg.y)
+                        self.chicks.append(new_chick)
+                        # 孵化成功才算分
+                        self.score += 1
+                        self.update_difficulty()
         
         # 檢查母雞吃蛋
         for egg in self.eggs[:]:
             if self.check_collision(current_pos, egg.get_position()):
                 self.eggs.remove(egg)
-                self.score += 1
-                self.update_difficulty()
                 # 添加跟隨的蛋(而非直接變成小雞)
                 self.following_eggs.append(FollowingEgg(current_pos[0], current_pos[1]))
                 # 生成新雞蛋
@@ -950,26 +993,38 @@ class Game:
                     self.eagles.remove(eagle)
             elif eagle.is_hovering:
                 # 盤旋老鷹只會盤旋,不會追小雞
-                eagle.hover_move()
+                # 如果被凍結，不移動
+                if POWERUP_FREEZE not in self.active_powerups:
+                    eagle.hover_move()
             elif not eagle.has_caught:
-                # 如果還沒抓到小雞,繼續追逐
-                if eagle.is_special:
-                    # 特殊老鷹追最近的小雞
-                    target_pos = self.find_nearest_chick(eagle.get_position())
-                else:
-                    # 普通老鷹追最後一隻小雞
-                    if self.chicks:
-                        target_pos = self.chicks[-1].get_position()
+                # 如果被凍結，不移動
+                if POWERUP_FREEZE not in self.active_powerups:
+                    # 如果還沒抓到小雞,繼續追逐
+                    if eagle.is_special:
+                        # 特殊老鷹追最近的小雞
+                        target_pos = self.find_nearest_chick(eagle.get_position())
                     else:
-                        target_pos = self.hen.get_position()
-                
-                # 傳遞母雞位置和其他老鷹讓老鷹可以使用 Boids
-                hen_pos = self.hen.get_position()
-                eagle.move_towards(target_pos[0], target_pos[1], hen_pos[0], hen_pos[1], self.eagles)
+                        # 普通老鷹追最後一隻小雞
+                        if self.chicks:
+                            target_pos = self.chicks[-1].get_position()
+                        else:
+                            target_pos = self.hen.get_position()
+                    
+                    # 傳遞母雞位置和其他老鷹讓老鷹可以使用 Boids
+                    hen_pos = self.hen.get_position()
+                    eagle.move_towards(target_pos[0], target_pos[1], hen_pos[0], hen_pos[1], self.eagles)
                 
                 # 檢查老鷹抓小雞
                 for chick in self.chicks[:]:
                     if self.check_collision(eagle.get_position(), chick.get_position(), GRID_SIZE):
+                        # 檢查是否有防護罩
+                        if POWERUP_SHIELD in self.active_powerups:
+                            # 消耗防護罩，老鷹被彈開
+                            del self.active_powerups[POWERUP_SHIELD]
+                            eagle.leaving = True
+                            break
+                        
+                        # 原本的抓小雞邏輯
                         self.chicks.remove(chick)
                         eagle.has_caught = True
                         eagle.caught_chick = chick  # 記錄被抓的小雞
@@ -1004,6 +1059,17 @@ class Game:
         # 繪製母雞
         self.hen.draw(virtual_screen)
         
+        # 如果有防護罩，繪製防護圈
+        if POWERUP_SHIELD in self.active_powerups:
+            hen_pos = self.hen.get_position()
+            pulse = abs(math.sin(pygame.time.get_ticks() * 0.005)) * 3
+            pygame.draw.circle(virtual_screen, (100, 150, 255), 
+                             (int(hen_pos[0] + GRID_SIZE/2), int(hen_pos[1] + GRID_SIZE/2)), 
+                             int(GRID_SIZE * 1.5 + pulse), 2)
+            pygame.draw.circle(virtual_screen, (150, 200, 255), 
+                             (int(hen_pos[0] + GRID_SIZE/2), int(hen_pos[1] + GRID_SIZE/2)), 
+                             int(GRID_SIZE * 1.3 + pulse * 0.5), 1)
+        
         # 繪製老鷹
         for eagle in self.eagles:
             eagle.draw(virtual_screen)
@@ -1028,6 +1094,14 @@ class Game:
         if POWERUP_SCARE in self.active_powerups:
             scare_text = self.small_font.render("驅趕中!", True, PINK)
             virtual_screen.blit(scare_text, (10, y_offset))
+            y_offset += 30
+        if POWERUP_FREEZE in self.active_powerups:
+            freeze_text = self.small_font.render(f"凍結: {self.active_powerups[POWERUP_FREEZE] // 60 + 1}秒", True, CYAN)
+            virtual_screen.blit(freeze_text, (10, y_offset))
+            y_offset += 30
+        if POWERUP_SHIELD in self.active_powerups:
+            shield_text = self.small_font.render("防護罩啟動", True, (100, 150, 255))
+            virtual_screen.blit(shield_text, (10, y_offset))
         
         # 遊戲結束畫面
         if self.game_over:
