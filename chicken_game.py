@@ -56,7 +56,7 @@ class Hen:
         self.wing_offset = 0  # 翅膀擺動偏移
         self.facing_right = True  # 面向方向
         
-    def move(self):
+    def move(self, all_objects=[]):
         """移動母雞,撞牆停止"""
         new_x = self.x + self.direction[0]
         new_y = self.y + self.direction[1]
@@ -185,46 +185,23 @@ class Chick:
         self.size = GRID_SIZE
         self.animation_frame = 0  # 動畫幀計數器
         self.hop_offset = 0  # 跳躍偏移
-        # Boids 速度向量(增加初始隨機速度)
-        self.vx = random.uniform(-1, 1)
-        self.vy = random.uniform(-1, 1)
-        self.max_speed = 5.5  # 進一步提高最大速度
-        self.max_force = 0.6  # 增加最大力量
         # 額外動畫屬性
         self.facing_right = True  # 面向方向
         self.wing_offset = 0  # 翅膀擺動
         self.blink_timer = 0  # 眼睛眨眼計時器
         self.is_blinking = False  # 是否正在眨眼
     
-    def update_position(self, x, y):
+    def update_position(self, x, y, prev_x=None, all_objects=[]):
+        """更新位置，像貪食蛇一樣跟隨，但避免重疊"""
+        # 根據移動方向更新面向
+        if prev_x is not None and abs(x - prev_x) > 0.1:
+            self.facing_right = x > prev_x
+        
+        # 設定目標位置
         self.x = x
         self.y = y
-        # 更新動畫
-        self.animation_frame += 1
-        self.hop_offset = abs(math.sin(self.animation_frame * 0.4)) * 2
-    
-    def apply_boids(self, chicks, hen_pos, speed_multiplier=1.0, target_pos=None, all_objects=[]):
-        """直線跟隨，避免重疊"""
-        # 如果有目標位置（跟隨前一個物件），朝該位置移動
-        if target_pos:
-            target_x, target_y = target_pos
-            dx = target_x - self.x
-            dy = target_y - self.y
-            dist = math.sqrt(dx ** 2 + dy ** 2)
-            
-            # 保持適當距離(縮短距離)
-            desired_distance = GRID_SIZE * 0.6
-            if dist > desired_distance:
-                # 朝目標移動
-                if dist > 0:
-                    self.vx = (dx / dist) * self.max_speed * speed_multiplier
-                    self.vy = (dy / dist) * self.max_speed * speed_multiplier
-            else:
-                # 距離夠近就減速
-                self.vx *= 0.8
-                self.vy *= 0.8
         
-        # 避免與其他物件重疊（推開）
+        # 檢查與其他物件的碰撞
         for obj in all_objects:
             if obj is self:
                 continue
@@ -233,22 +210,13 @@ class Chick:
             dy = self.y - obj_pos[1]
             dist = math.sqrt(dx ** 2 + dy ** 2)
             
-            # 如果太近，強力推開
-            if dist < GRID_SIZE and dist > 0:
-                push_force = (GRID_SIZE - dist) / GRID_SIZE * 2
-                self.vx += (dx / dist) * push_force
-                self.vy += (dy / dist) * push_force
-        
-        # 限制速度
-        speed = math.sqrt(self.vx ** 2 + self.vy ** 2)
-        effective_max_speed = self.max_speed * speed_multiplier
-        if speed > effective_max_speed:
-            self.vx = (self.vx / speed) * effective_max_speed
-            self.vy = (self.vy / speed) * effective_max_speed
-        
-        # 更新位置
-        self.x += self.vx
-        self.y += self.vy
+            # 如果太近，調整位置
+            min_distance = GRID_SIZE * 0.7
+            if dist < min_distance and dist > 0:
+                # 推開到最小距離
+                push_amount = min_distance - dist
+                self.x += (dx / dist) * push_amount
+                self.y += (dy / dist) * push_amount
         
         # 邊界檢查
         self.x = max(0, min(self.x, WINDOW_WIDTH - self.size))
@@ -256,14 +224,8 @@ class Chick:
         
         # 更新動畫
         self.animation_frame += 1
-        # 更快的跳躍節奏
         self.hop_offset = abs(math.sin(self.animation_frame * 0.5)) * 3
-        # 翅膀擺動
         self.wing_offset = math.sin(self.animation_frame * 0.4) * 2
-        
-        # 根據移動方向更新面向
-        if abs(self.vx) > 0.1:
-            self.facing_right = self.vx > 0
         
         # 眨眼效果
         self.blink_timer += 1
@@ -363,9 +325,33 @@ class FollowingEgg:
         self.animation_frame = 0
         self.shake_offset = 0  # 搖晃偏移
     
-    def update_position(self, x, y):
+    def update_position(self, x, y, all_objects=[]):
+        """更新位置，避免重疊"""
+        # 設定目標位置
         self.x = x
         self.y = y
+        
+        # 檢查與其他物件的碰撞
+        for obj in all_objects:
+            if obj is self:
+                continue
+            obj_pos = obj.get_position() if hasattr(obj, 'get_position') else (obj.x, obj.y)
+            dx = self.x - obj_pos[0]
+            dy = self.y - obj_pos[1]
+            dist = math.sqrt(dx ** 2 + dy ** 2)
+            
+            # 如果太近，調整位置
+            min_distance = GRID_SIZE * 0.7
+            if dist < min_distance and dist > 0:
+                # 推開到最小距離
+                push_amount = min_distance - dist
+                self.x += (dx / dist) * push_amount
+                self.y += (dy / dist) * push_amount
+        
+        # 邊界檢查
+        self.x = max(0, min(self.x, WINDOW_WIDTH - self.size))
+        self.y = max(0, min(self.y, WINDOW_HEIGHT - self.size))
+        
         self.animation_frame += 1
         # 孵化倒數
         self.hatch_timer -= 1
@@ -1012,52 +998,63 @@ class Game:
         if self.game_over:
             return
         
+        # 更新小雞和蛋的位置 - 像貫食蛇一樣跟隨
         # 移動母雞
-        self.hen.move()
+        self.hen.move([])
         current_pos = self.hen.get_position()
-        self.position_history.append(current_pos)
         
-        # 更新小雞位置 - 直線跟隨
+        # 只在母雞實際移動時才記錄位置(避免停止時重疊)
+        if len(self.position_history) == 0:
+            self.position_history.append(current_pos)
+        else:
+            last_pos = self.position_history[-1]
+            # 只有當位置變化超過一定距離才記錄
+            if abs(current_pos[0] - last_pos[0]) > 0.5 or abs(current_pos[1] - last_pos[1]) > 0.5:
+                self.position_history.append(current_pos)
+        
+        # 計算跟隨間距
+        follow_spacing = 8  # 每個物件之間的間距
+        
+        # 建立所有物件列表用於碰撞檢測
         all_objects = [self.hen] + self.following_eggs + self.chicks
-        for i, chick in enumerate(self.chicks):
-            # 第一隻小雞跟隨最後一個蛋（如果有），否則跟隨母雞
-            if i == 0:
-                if self.following_eggs:
-                    target_pos = self.following_eggs[-1].get_position()
-                else:
-                    target_pos = current_pos
-            else:
-                # 其他小雞跟隨前一隻小雞
-                target_pos = self.chicks[i-1].get_position()
-            
-            chick.apply_boids(self.chicks, current_pos, self.hen.speed_boost, target_pos, all_objects)
         
         # 更新跟隨的蛋位置
-        follow_spacing = 12  # 縮短跟隨距離 (原為 GRID_SIZE = 20)
         if len(self.position_history) > follow_spacing:
-            for i, following_egg in enumerate(self.following_eggs[:]):
-                # 每個蛋跟隨在小雞之後
-                history_index = -(len(self.chicks) + i + 1) * follow_spacing
+            for i, following_egg in enumerate(self.following_eggs):
+                # 每個蛋跟隨在母雞後面
+                history_index = -(i + 1) * follow_spacing
                 if abs(history_index) <= len(self.position_history):
                     pos = self.position_history[history_index]
-                    following_egg.update_position(pos[0], pos[1])
+                    following_egg.update_position(pos[0], pos[1], all_objects)
+        
+        # 更新小雞位置
+        if len(self.position_history) > follow_spacing:
+            for i, chick in enumerate(self.chicks):
+                # 小雞跟隨在蛋後面
+                history_index = -(len(self.following_eggs) + i + 1) * follow_spacing
+                if abs(history_index) <= len(self.position_history):
+                    pos = self.position_history[history_index]
+                    prev_pos = self.position_history[history_index + 1] if abs(history_index + 1) <= len(self.position_history) else None
+                    prev_x = prev_pos[0] if prev_pos else None
+                    chick.update_position(pos[0], pos[1], prev_x, all_objects)
+        
+        # 檢查蛋是否準備好孵化
+        for following_egg in self.following_eggs[:]:
+            if following_egg.is_ready_to_hatch():
+                self.following_eggs.remove(following_egg)
                 
-                # 檢查是否準備好孵化
-                if following_egg.is_ready_to_hatch():
-                    self.following_eggs.remove(following_egg)
-                    
-                    # 20% 機率孵化出道具
-                    if random.random() < 0.2:
-                        powerup_type = random.choice([POWERUP_SPEED, POWERUP_SCARE])
-                        # 道具出現在蛋的位置
-                        self.powerups.append(PowerUp(powerup_type, following_egg.x, following_egg.y))
-                    else:
-                        # 孵化成小雞
-                        new_chick = Chick(following_egg.x, following_egg.y)
-                        self.chicks.append(new_chick)
-                        # 孵化成功才算分
-                        self.score += 1
-                        self.update_difficulty()
+                # 20% 機率孵化出道具
+                if random.random() < 0.2:
+                    powerup_type = random.choice([POWERUP_SPEED, POWERUP_SCARE])
+                    # 道具出現在蛋的位置
+                    self.powerups.append(PowerUp(powerup_type, following_egg.x, following_egg.y))
+                else:
+                    # 孵化成小雞
+                    new_chick = Chick(following_egg.x, following_egg.y)
+                    self.chicks.append(new_chick)
+                    # 孵化成功才算分
+                    self.score += 1
+                    self.update_difficulty()
         
         # 檢查母雞吃蛋
         for egg in self.eggs[:]:
