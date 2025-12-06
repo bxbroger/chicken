@@ -47,6 +47,7 @@ class Hen:
         self.x = x
         self.y = y
         self.direction = [0, 0]  # 初始靜止
+        self.angle = 0  # 旋轉角度（弧度）
         self.size = GRID_SIZE
         self.base_speed = 3  # 基礎速度
         self.speed = self.base_speed
@@ -55,7 +56,7 @@ class Hen:
         self.wing_offset = 0  # 翅膀擺動偏移
         self.facing_right = True  # 面向方向
         
-    def move(self):
+    def move(self, all_objects=[]):
         """移動母雞,撞牆停止"""
         new_x = self.x + self.direction[0]
         new_y = self.y + self.direction[1]
@@ -87,13 +88,17 @@ class Hen:
         """改變方向"""
         effective_speed = self.speed * self.speed_boost
         if direction == "UP":
-            self.direction = [0, -effective_speed]
-        elif direction == "DOWN":
-            self.direction = [0, effective_speed]
+            # 向當前角度方向前進
+            self.direction = [
+                math.cos(self.angle) * effective_speed,
+                math.sin(self.angle) * effective_speed
+            ]
         elif direction == "LEFT":
-            self.direction = [-effective_speed, 0]
+            # 向左旋轉
+            self.angle -= 0.1
         elif direction == "RIGHT":
-            self.direction = [effective_speed, 0]
+            # 向右旋轉
+            self.angle += 0.1
         elif direction == "STOP":
             self.direction = [0, 0]
     
@@ -101,70 +106,76 @@ class Hen:
         return (self.x, self.y)
     
     def draw(self, screen):
-        # 計算方向偏移
-        direction = 1 if self.facing_right else -1
+        # 俯視視角繪製
         center_x = self.x + self.size * 0.5
+        center_y = self.y + self.size * 0.5
         
-        # 身體 (橢圓形,上下輕微擺動,使用白色)
-        body_bounce = math.sin(self.animation_frame * 0.2) * 1
+        # 身體 (白色橢圓，稍微傾斜)
         body_color = (255, 255, 255)  # 白色身體
-        pygame.draw.ellipse(screen, body_color, (self.x, self.y + 4 + body_bounce, self.size, self.size - 4))
+        pygame.draw.ellipse(screen, body_color, (self.x + 2, self.y + 3, self.size - 4, self.size - 6))
         # 身體陰影
-        pygame.draw.ellipse(screen, (220, 220, 220), (self.x + 2, self.y + 6 + body_bounce, self.size - 4, self.size - 6))
+        pygame.draw.ellipse(screen, (220, 220, 220), (self.x + 4, self.y + 5, self.size - 8, self.size - 10))
+        
+        # 計算頭部位置（根據角度）
+        head_distance = 8
+        head_x = center_x + math.cos(self.angle) * head_distance
+        head_y = center_y + math.sin(self.angle) * head_distance
+        
+        # 脖子（連接身體和頭部）
+        neck_color = (255, 220, 200)
+        pygame.draw.line(screen, neck_color, (int(center_x), int(center_y)), (int(head_x), int(head_y)), 4)
         
         # 頭部 (圓形,使用淺色)
         head_color = (255, 220, 200)  # 淺膚色頭部
-        pygame.draw.circle(screen, head_color, (int(center_x), int(self.y + 6 + body_bounce)), 7)
+        pygame.draw.circle(screen, head_color, (int(head_x), int(head_y)), 6)
         # 頭部輪廓
-        pygame.draw.circle(screen, (200, 160, 140), (int(center_x), int(self.y + 6 + body_bounce)), 7, 1)
+        pygame.draw.circle(screen, (200, 160, 140), (int(head_x), int(head_y)), 6, 1)
         
-        # 雞冠 (鋸齒狀,隨頭部擺動,鮮紅色)
-        comb_points = [
-            (center_x - 2 * direction, self.y + 2 + body_bounce),
-            (center_x - 1 * direction, self.y - 2 + body_bounce),
-            (center_x, self.y + 1 + body_bounce),
-            (center_x + 1 * direction, self.y - 2 + body_bounce),
-            (center_x + 2 * direction, self.y + 2 + body_bounce)
-        ]
-        pygame.draw.polygon(screen, RED, comb_points)
-        pygame.draw.polygon(screen, DARK_RED, comb_points, 1)
+        # 雞冠 (在頭頂)
+        comb_x = head_x + math.cos(self.angle - math.pi/2) * 3
+        comb_y = head_y + math.sin(self.angle - math.pi/2) * 3
+        pygame.draw.circle(screen, RED, (int(comb_x), int(comb_y)), 3)
+        pygame.draw.circle(screen, DARK_RED, (int(comb_x), int(comb_y)), 3, 1)
         
-        # 眼睛位置(根據方向調整,顯示在面向側)
-        if self.facing_right:
-            eye_x = center_x + 4
-        else:
-            eye_x = center_x - 4
-        eye_y = self.y + 5 + body_bounce
+        # 眼睛（兩側各一個）
+        eye_offset = 2
+        eye1_x = head_x + math.cos(self.angle + math.pi/2) * eye_offset
+        eye1_y = head_y + math.sin(self.angle + math.pi/2) * eye_offset
+        eye2_x = head_x + math.cos(self.angle - math.pi/2) * eye_offset
+        eye2_y = head_y + math.sin(self.angle - math.pi/2) * eye_offset
+        pygame.draw.circle(screen, BLACK, (int(eye1_x), int(eye1_y)), 1)
+        pygame.draw.circle(screen, BLACK, (int(eye2_x), int(eye2_y)), 1)
         
-        # 眼睛外圈 (白色)
-        pygame.draw.circle(screen, WHITE, (int(eye_x), int(eye_y)), 4)
-        # 眼珠 (黑色)
-        pygame.draw.circle(screen, BLACK, (int(eye_x), int(eye_y)), 2)
-        
-        # 嘴巴 (橘色三角形,根據方向調整,更大更明顯)
-        beak_tip_x = center_x + (6 * direction)
-        beak_base_y_top = self.y + 8 + body_bounce
-        beak_base_y_bottom = self.y + 11 + body_bounce
+        # 嘴巴 (橘色三角形，指向前方)
+        beak_length = 5
+        beak_tip_x = head_x + math.cos(self.angle) * beak_length
+        beak_tip_y = head_y + math.sin(self.angle) * beak_length
+        beak_left_x = head_x + math.cos(self.angle + math.pi/2) * 2
+        beak_left_y = head_y + math.sin(self.angle + math.pi/2) * 2
+        beak_right_x = head_x + math.cos(self.angle - math.pi/2) * 2
+        beak_right_y = head_y + math.sin(self.angle - math.pi/2) * 2
         beak_points = [
-            (center_x + (1 * direction), beak_base_y_top),
-            (beak_tip_x, self.y + 9.5 + body_bounce),
-            (center_x + (1 * direction), beak_base_y_bottom)
+            (int(beak_tip_x), int(beak_tip_y)),
+            (int(beak_left_x), int(beak_left_y)),
+            (int(beak_right_x), int(beak_right_y))
         ]
         pygame.draw.polygon(screen, ORANGE, beak_points)
-        # 嘴巴輪廓(較暗的橘色)
         pygame.draw.polygon(screen, (200, 120, 0), beak_points, 1)
         
-        # 翅膀 (白色橢圓,上下擺動,根據方向顯示)
+        # 翅膀 (白色橢圓，在身體兩側，會擺動)
+        self.wing_offset = math.sin(self.animation_frame * 0.3) * 2
         wing_color = (255, 255, 255)  # 白色翅膀
         wing_shadow = (220, 220, 220)  # 翅膀陰影
-        if self.facing_right:
-            # 面向右側:左翅在背後,右翅在前面
-            pygame.draw.ellipse(screen, wing_shadow, (self.x + 2, self.y + 8 + body_bounce + self.wing_offset, 6, 8))  # 左翅(背後,較暗)
-            pygame.draw.ellipse(screen, wing_color, (self.x + self.size - 8, self.y + 8 + body_bounce - self.wing_offset, 6, 8))  # 右翅(前面)
-        else:
-            # 面向左側:右翅在背後,左翅在前面
-            pygame.draw.ellipse(screen, wing_shadow, (self.x + self.size - 8, self.y + 8 + body_bounce + self.wing_offset, 6, 8))  # 右翅(背後,較暗)
-            pygame.draw.ellipse(screen, wing_color, (self.x + 2, self.y + 8 + body_bounce - self.wing_offset, 6, 8))  # 左翅(前面)
+        
+        # 左翅
+        left_wing_x = center_x + math.cos(self.angle + math.pi/2) * (6 + self.wing_offset)
+        left_wing_y = center_y + math.sin(self.angle + math.pi/2) * (6 + self.wing_offset)
+        pygame.draw.ellipse(screen, wing_color, (int(left_wing_x - 4), int(left_wing_y - 3), 8, 6))
+        
+        # 右翅
+        right_wing_x = center_x + math.cos(self.angle - math.pi/2) * (6 + self.wing_offset)
+        right_wing_y = center_y + math.sin(self.angle - math.pi/2) * (6 + self.wing_offset)
+        pygame.draw.ellipse(screen, wing_color, (int(right_wing_x - 4), int(right_wing_y - 3), 8, 6))
 
 class Chick:
     """小雞類別"""
@@ -174,44 +185,38 @@ class Chick:
         self.size = GRID_SIZE
         self.animation_frame = 0  # 動畫幀計數器
         self.hop_offset = 0  # 跳躍偏移
-        # Boids 速度向量(增加初始隨機速度)
-        self.vx = random.uniform(-1, 1)
-        self.vy = random.uniform(-1, 1)
-        self.max_speed = 2.5  # 增加最大速度
-        self.max_force = 0.4  # 增加最大力量
         # 額外動畫屬性
         self.facing_right = True  # 面向方向
         self.wing_offset = 0  # 翅膀擺動
         self.blink_timer = 0  # 眼睛眨眼計時器
         self.is_blinking = False  # 是否正在眨眼
     
-    def update_position(self, x, y):
+    def update_position(self, x, y, prev_x=None, all_objects=[]):
+        """更新位置，像貪食蛇一樣跟隨，但避免重疊"""
+        # 根據移動方向更新面向
+        if prev_x is not None and abs(x - prev_x) > 0.1:
+            self.facing_right = x > prev_x
+        
+        # 設定目標位置
         self.x = x
         self.y = y
-        # 更新動畫
-        self.animation_frame += 1
-        self.hop_offset = abs(math.sin(self.animation_frame * 0.4)) * 2
-    
-    def apply_boids(self, chicks, hen_pos, speed_multiplier=1.0):
-        """應用 Boids 演算法"""
-        separation = self.separation(chicks)
-        alignment = self.alignment(chicks)
-        cohesion = self.cohesion(hen_pos)  # 向母雞聚集
         
-        # 應用力
-        self.vx += separation[0] + alignment[0] + cohesion[0]
-        self.vy += separation[1] + alignment[1] + cohesion[1]
-        
-        # 限制速度
-        speed = math.sqrt(self.vx ** 2 + self.vy ** 2)
-        effective_max_speed = self.max_speed * speed_multiplier
-        if speed > effective_max_speed:
-            self.vx = (self.vx / speed) * effective_max_speed
-            self.vy = (self.vy / speed) * effective_max_speed
-        
-        # 更新位置
-        self.x += self.vx
-        self.y += self.vy
+        # 檢查與其他物件的碰撞
+        for obj in all_objects:
+            if obj is self:
+                continue
+            obj_pos = obj.get_position() if hasattr(obj, 'get_position') else (obj.x, obj.y)
+            dx = self.x - obj_pos[0]
+            dy = self.y - obj_pos[1]
+            dist = math.sqrt(dx ** 2 + dy ** 2)
+            
+            # 如果太近，調整位置
+            min_distance = GRID_SIZE * 0.7
+            if dist < min_distance and dist > 0:
+                # 推開到最小距離
+                push_amount = min_distance - dist
+                self.x += (dx / dist) * push_amount
+                self.y += (dy / dist) * push_amount
         
         # 邊界檢查
         self.x = max(0, min(self.x, WINDOW_WIDTH - self.size))
@@ -219,14 +224,8 @@ class Chick:
         
         # 更新動畫
         self.animation_frame += 1
-        # 更快的跳躍節奏
         self.hop_offset = abs(math.sin(self.animation_frame * 0.5)) * 3
-        # 翅膀擺動
         self.wing_offset = math.sin(self.animation_frame * 0.4) * 2
-        
-        # 根據移動方向更新面向
-        if abs(self.vx) > 0.1:
-            self.facing_right = self.vx > 0
         
         # 眨眼效果
         self.blink_timer += 1
@@ -235,78 +234,6 @@ class Chick:
             if self.blink_timer > 125:  # 眨眼持續 5 幀
                 self.is_blinking = False
                 self.blink_timer = random.randint(0, 60)  # 隨機下次眨眼時間
-    
-    def separation(self, chicks):
-        """分離:避免與其他小雞靠太近"""
-        steer_x, steer_y = 0, 0
-        count = 0
-        
-        for other in chicks:
-            if other is self:
-                continue
-            
-            dist = math.sqrt((self.x - other.x) ** 2 + (self.y - other.y) ** 2)
-            if dist > 0 and dist < BOID_SEPARATION_DISTANCE:
-                diff_x = self.x - other.x
-                diff_y = self.y - other.y
-                diff_x /= dist
-                diff_y /= dist
-                steer_x += diff_x
-                steer_y += diff_y
-                count += 1
-        
-        if count > 0:
-            steer_x /= count
-            steer_y /= count
-            # 正規化並應用權重
-            length = math.sqrt(steer_x ** 2 + steer_y ** 2)
-            if length > 0:
-                steer_x = (steer_x / length) * self.max_force * BOID_SEPARATION_WEIGHT
-                steer_y = (steer_y / length) * self.max_force * BOID_SEPARATION_WEIGHT
-        
-        return (steer_x, steer_y)
-    
-    def alignment(self, chicks):
-        """對齊:與附近小雞的平均速度對齊"""
-        avg_vx, avg_vy = 0, 0
-        count = 0
-        
-        for other in chicks:
-            if other is self:
-                continue
-            
-            dist = math.sqrt((self.x - other.x) ** 2 + (self.y - other.y) ** 2)
-            if dist > 0 and dist < BOID_ALIGNMENT_DISTANCE:
-                avg_vx += other.vx
-                avg_vy += other.vy
-                count += 1
-        
-        if count > 0:
-            avg_vx /= count
-            avg_vy /= count
-            # 正規化並應用權重
-            length = math.sqrt(avg_vx ** 2 + avg_vy ** 2)
-            if length > 0:
-                avg_vx = (avg_vx / length) * self.max_force * BOID_ALIGNMENT_WEIGHT
-                avg_vy = (avg_vy / length) * self.max_force * BOID_ALIGNMENT_WEIGHT
-            return (avg_vx, avg_vy)
-        
-        return (0, 0)
-    
-    def cohesion(self, hen_pos):
-        """凝聚:向母雞位置移動"""
-        target_x, target_y = hen_pos
-        desired_x = target_x - self.x
-        desired_y = target_y - self.y
-        
-        dist = math.sqrt(desired_x ** 2 + desired_y ** 2)
-        if dist > 0:
-            desired_x /= dist
-            desired_y /= dist
-            desired_x *= self.max_force * BOID_COHESION_WEIGHT
-            desired_y *= self.max_force * BOID_COHESION_WEIGHT
-        
-        return (desired_x, desired_y)
     
     def get_position(self):
         return (self.x, self.y)
@@ -398,9 +325,33 @@ class FollowingEgg:
         self.animation_frame = 0
         self.shake_offset = 0  # 搖晃偏移
     
-    def update_position(self, x, y):
+    def update_position(self, x, y, all_objects=[]):
+        """更新位置，避免重疊"""
+        # 設定目標位置
         self.x = x
         self.y = y
+        
+        # 檢查與其他物件的碰撞
+        for obj in all_objects:
+            if obj is self:
+                continue
+            obj_pos = obj.get_position() if hasattr(obj, 'get_position') else (obj.x, obj.y)
+            dx = self.x - obj_pos[0]
+            dy = self.y - obj_pos[1]
+            dist = math.sqrt(dx ** 2 + dy ** 2)
+            
+            # 如果太近，調整位置
+            min_distance = GRID_SIZE * 0.7
+            if dist < min_distance and dist > 0:
+                # 推開到最小距離
+                push_amount = min_distance - dist
+                self.x += (dx / dist) * push_amount
+                self.y += (dy / dist) * push_amount
+        
+        # 邊界檢查
+        self.x = max(0, min(self.x, WINDOW_WIDTH - self.size))
+        self.y = max(0, min(self.y, WINDOW_HEIGHT - self.size))
+        
         self.animation_frame += 1
         # 孵化倒數
         self.hatch_timer -= 1
@@ -573,6 +524,15 @@ class Eagle:
         self.max_speed = self.speed
         self.max_force = 0.5
         
+        # 繞行攻擊相關屬性
+        self.circling = False  # 是否正在繞行攻擊
+        self.preparing = False  # 是否在準備繞行
+        self.prepare_timer = 0  # 準備時間計時器
+        self.circle_path = []  # 繞行路徑點
+        self.circle_index = 0  # 當前路徑點索引
+        self.stunned = False  # 是否被彈開暈眩
+        self.stun_timer = 0  # 暈眩計時器
+        
         # 盤旋老鷹特有屬性
         if self.is_hovering:
             # 設定盤旋中心點(隨機位置)
@@ -583,15 +543,80 @@ class Eagle:
             self.hover_timer = random.randint(300, 600)  # 盤旋時間 (5-10秒)
             self.hover_speed = 0.03  # 盤旋角速度
     
-    def move_towards(self, target_x, target_y, hen_x=None, hen_y=None, eagles=None):
-        """使用 Boids 演算法向目標位置移動"""
+    def move_towards(self, target_x, target_y, hen_x=None, hen_y=None, hen_angle=0, eagles=None):
+        """使用 Boids 演算法向目標位置移動，支援繞行攻擊"""
         # 更新動畫
         self.animation_frame += 1
         self.wing_flap = math.sin(self.animation_frame * 0.4) * 8
         
+        # 如果被暈眩，停止移動
+        if self.stunned:
+            self.stun_timer -= 1
+            if self.stun_timer <= 0:
+                self.stunned = False
+                self.circling = False
+                self.preparing = False
+            self.vx *= 0.8  # 減速
+            self.vy *= 0.8
+            self.x += self.vx
+            self.y += self.vy
+            return
+        
+        # 檢查是否在母雞前方，需要繞行
+        if hen_x is not None and hen_y is not None and not self.circling and not self.preparing:
+            hen_distance = math.sqrt((hen_x - self.x) ** 2 + (hen_y - self.y) ** 2)
+            if hen_distance < GRID_SIZE * 5:
+                eagle_angle = math.atan2(self.y - hen_y, self.x - hen_x)
+                angle_diff = eagle_angle - hen_angle
+                while angle_diff > math.pi:
+                    angle_diff -= 2 * math.pi
+                while angle_diff < -math.pi:
+                    angle_diff += 2 * math.pi
+                
+                # 如果在前方 90 度範圍，開始準備繞行
+                if abs(angle_diff) < math.pi / 2:
+                    self.preparing = True
+                    self.prepare_timer = 30  # 準備 0.5 秒
+                    self.plan_circle_path(hen_x, hen_y, target_x, target_y)
+        
+        # 準備繞行階段 - 停頓
+        if self.preparing:
+            self.prepare_timer -= 1
+            self.vx *= 0.9  # 快速減速
+            self.vy *= 0.9
+            if self.prepare_timer <= 0:
+                self.preparing = False
+                self.circling = True
+            self.x += self.vx
+            self.y += self.vy
+            return
+        
+        # 繞行階段 - 沿固定路徑移動
+        if self.circling:
+            if self.circle_index < len(self.circle_path):
+                path_x, path_y = self.circle_path[self.circle_index]
+                dx = path_x - self.x
+                dy = path_y - self.y
+                dist = math.sqrt(dx ** 2 + dy ** 2)
+                
+                if dist < GRID_SIZE * 0.5:  # 接近路徑點，移到下一個
+                    self.circle_index += 1
+                else:
+                    # 朝路徑點移動
+                    self.vx = (dx / dist) * self.max_speed * 1.2
+                    self.vy = (dy / dist) * self.max_speed * 1.2
+            else:
+                # 繞行完成
+                self.circling = False
+            
+            self.x += self.vx
+            self.y += self.vy
+            return
+        
+        # 正常追逐模式
         # 計算各種力
         seek_force = self.seek(target_x, target_y)
-        avoid_force = self.avoid_hen(hen_x, hen_y) if hen_x is not None else (0, 0)
+        avoid_force = self.avoid_hen(hen_x, hen_y, hen_angle) if hen_x is not None else (0, 0)
         separation_force = self.separation_eagles(eagles) if eagles else (0, 0)
         
         # 應用力
@@ -648,24 +673,68 @@ class Eagle:
         
         return (desired_x, desired_y)
     
-    def avoid_hen(self, hen_x, hen_y):
-        """閃避母雞"""
+    def avoid_hen(self, hen_x, hen_y, hen_angle):
+        """只閃避母雞前方"""
         if hen_x is None or hen_y is None:
             return (0, 0)
         
         hen_distance = math.sqrt((hen_x - self.x) ** 2 + (hen_y - self.y) ** 2)
-        # 如果母雞太近(小於 4 個格子距離),強力閃避母雞
+        
+        # 如果母雞太近(小於 4 個格子距離)
         if hen_distance < GRID_SIZE * 4 and hen_distance > 0:
-            # 計算遠離母雞的方向
-            avoid_x = self.x - hen_x
-            avoid_y = self.y - hen_y
-            # 距離越近,逃避力量越大
-            avoid_strength = (GRID_SIZE * 4 - hen_distance) / (GRID_SIZE * 4)
-            avoid_x = (avoid_x / hen_distance) * self.max_force * 3 * (1 + avoid_strength)
-            avoid_y = (avoid_y / hen_distance) * self.max_force * 3 * (1 + avoid_strength)
-            return (avoid_x, avoid_y)
+            # 計算老鷹相對於母雞的角度
+            eagle_angle = math.atan2(self.y - hen_y, self.x - hen_x)
+            # 計算角度差異
+            angle_diff = eagle_angle - hen_angle
+            # 正規化角度到 -π 到 π
+            while angle_diff > math.pi:
+                angle_diff -= 2 * math.pi
+            while angle_diff < -math.pi:
+                angle_diff += 2 * math.pi
+            
+            # 只有在母雞前方 90 度範圍內才閃避
+            if abs(angle_diff) < math.pi / 2:
+                # 計算遠離母雞的方向
+                avoid_x = self.x - hen_x
+                avoid_y = self.y - hen_y
+                # 距離越近,逃避力量越大
+                avoid_strength = (GRID_SIZE * 4 - hen_distance) / (GRID_SIZE * 4)
+                avoid_x = (avoid_x / hen_distance) * self.max_force * 3 * (1 + avoid_strength)
+                avoid_y = (avoid_y / hen_distance) * self.max_force * 3 * (1 + avoid_strength)
+                return (avoid_x, avoid_y)
         
         return (0, 0)
+    
+    def plan_circle_path(self, hen_x, hen_y, target_x, target_y):
+        """計劃繞行路徑 - 弧形繞到母雞後方"""
+        self.circle_path = []
+        
+        # 計算從當前位置到母雞的角度
+        start_angle = math.atan2(self.y - hen_y, self.x - hen_x)
+        # 計算目標(小雞)相對母雞的角度
+        target_angle = math.atan2(target_y - hen_y, target_x - hen_x)
+        
+        # 決定繞行方向(選擇較短的弧)
+        angle_diff = target_angle - start_angle
+        while angle_diff > math.pi:
+            angle_diff -= 2 * math.pi
+        while angle_diff < -math.pi:
+            angle_diff += 2 * math.pi
+        
+        # 繞行半徑 (比當前距離稍大)
+        current_dist = math.sqrt((self.x - hen_x) ** 2 + (self.y - hen_y) ** 2)
+        circle_radius = max(current_dist, GRID_SIZE * 4)
+        
+        # 生成弧形路徑點 (20個點)
+        num_points = 20
+        for i in range(num_points + 1):
+            t = i / num_points
+            angle = start_angle + angle_diff * t
+            path_x = hen_x + math.cos(angle) * circle_radius
+            path_y = hen_y + math.sin(angle) * circle_radius
+            self.circle_path.append((path_x, path_y))
+        
+        self.circle_index = 0
     
     def separation_eagles(self, eagles):
         """與其他老鷹保持距離"""
@@ -805,6 +874,12 @@ class Game:
                 # 最後備用：使用預設字體（可能不顯示中文）
                 self.font = pygame.font.Font(None, 36)
                 self.small_font = pygame.font.Font(None, 24)
+        # 按鍵狀態追蹤
+        self.keys_pressed = {
+            'up': False,
+            'left': False,
+            'right': False
+        }
         self.reset_game()
     
     def reset_game(self):
@@ -824,6 +899,12 @@ class Game:
         self.powerup_spawn_timer = 0
         self.powerup_spawn_interval = 600  # 10 秒 (600 幀)
         self.difficulty_multiplier = 1.0
+        # 重置按鍵狀態
+        self.keys_pressed = {
+            'up': False,
+            'left': False,
+            'right': False
+        }
     
     def spawn_eagle(self):
         """生成老鷹"""
@@ -918,41 +999,63 @@ class Game:
         if self.game_over:
             return
         
+        # 更新小雞和蛋的位置 - 像貫食蛇一樣跟隨
         # 移動母雞
-        self.hen.move()
+        self.hen.move([])
         current_pos = self.hen.get_position()
-        self.position_history.append(current_pos)
         
-        # 使用 Boids 更新小雞位置
-        for chick in self.chicks:
-            chick.apply_boids(self.chicks, current_pos, self.hen.speed_boost)
+        # 只在母雞實際移動時才記錄位置(避免停止時重疊)
+        if len(self.position_history) == 0:
+            self.position_history.append(current_pos)
+        else:
+            last_pos = self.position_history[-1]
+            # 只有當位置變化超過一定距離才記錄
+            if abs(current_pos[0] - last_pos[0]) > 0.5 or abs(current_pos[1] - last_pos[1]) > 0.5:
+                self.position_history.append(current_pos)
+        
+        # 計算跟隨間距
+        follow_spacing = 8  # 每個物件之間的間距
+        
+        # 建立所有物件列表用於碰撞檢測
+        all_objects = [self.hen] + self.following_eggs + self.chicks
         
         # 更新跟隨的蛋位置
-        follow_spacing = 12  # 縮短跟隨距離 (原為 GRID_SIZE = 20)
         if len(self.position_history) > follow_spacing:
-            for i, following_egg in enumerate(self.following_eggs[:]):
-                # 每個蛋跟隨在小雞之後
-                history_index = -(len(self.chicks) + i + 1) * follow_spacing
+            for i, following_egg in enumerate(self.following_eggs):
+                # 每個蛋跟隨在母雞後面
+                history_index = -(i + 1) * follow_spacing
                 if abs(history_index) <= len(self.position_history):
                     pos = self.position_history[history_index]
-                    following_egg.update_position(pos[0], pos[1])
+                    following_egg.update_position(pos[0], pos[1], all_objects)
+        
+        # 更新小雞位置
+        if len(self.position_history) > follow_spacing:
+            for i, chick in enumerate(self.chicks):
+                # 小雞跟隨在蛋後面
+                history_index = -(len(self.following_eggs) + i + 1) * follow_spacing
+                if abs(history_index) <= len(self.position_history):
+                    pos = self.position_history[history_index]
+                    prev_pos = self.position_history[history_index + 1] if abs(history_index + 1) <= len(self.position_history) else None
+                    prev_x = prev_pos[0] if prev_pos else None
+                    chick.update_position(pos[0], pos[1], prev_x, all_objects)
+        
+        # 檢查蛋是否準備好孵化
+        for following_egg in self.following_eggs[:]:
+            if following_egg.is_ready_to_hatch():
+                self.following_eggs.remove(following_egg)
                 
-                # 檢查是否準備好孵化
-                if following_egg.is_ready_to_hatch():
-                    self.following_eggs.remove(following_egg)
-                    
-                    # 20% 機率孵化出道具
-                    if random.random() < 0.2:
-                        powerup_type = random.choice([POWERUP_SPEED, POWERUP_SCARE])
-                        # 道具出現在蛋的位置
-                        self.powerups.append(PowerUp(powerup_type, following_egg.x, following_egg.y))
-                    else:
-                        # 孵化成小雞
-                        new_chick = Chick(following_egg.x, following_egg.y)
-                        self.chicks.append(new_chick)
-                        # 孵化成功才算分
-                        self.score += 1
-                        self.update_difficulty()
+                # 20% 機率孵化出道具
+                if random.random() < 0.2:
+                    powerup_type = random.choice([POWERUP_SPEED, POWERUP_SCARE])
+                    # 道具出現在蛋的位置
+                    self.powerups.append(PowerUp(powerup_type, following_egg.x, following_egg.y))
+                else:
+                    # 孵化成小雞
+                    new_chick = Chick(following_egg.x, following_egg.y)
+                    self.chicks.append(new_chick)
+                    # 孵化成功才算分
+                    self.score += 1
+                    self.update_difficulty()
         
         # 檢查母雞吃蛋
         for egg in self.eggs[:]:
@@ -996,8 +1099,8 @@ class Game:
                 # 盤旋老鷹在盤旋時間內只會盤旋,不會追小雞
                 # 如果被凍結，不移動
                 if POWERUP_FREEZE not in self.active_powerups:
-                    eagle.hover_move()
-                
+                    eagle.hover_move()                
+
                 # 盤旋老鷹也會抓小雞(如果碰到的話)
                 if not eagle.has_caught:
                     for chick in self.chicks[:]:
@@ -1032,9 +1135,24 @@ class Game:
                         else:
                             target_pos = self.hen.get_position()
                     
-                    # 傳遞母雞位置和其他老鷹讓老鷹可以使用 Boids
+                    # 傳遞母雞位置、角度和其他老鷹
                     hen_pos = self.hen.get_position()
-                    eagle.move_towards(target_pos[0], target_pos[1], hen_pos[0], hen_pos[1], self.eagles)
+                    eagle.move_towards(target_pos[0], target_pos[1], hen_pos[0], hen_pos[1], self.hen.angle, self.eagles)
+                
+                # 檢查老鷹是否撞到母雞
+                if self.check_collision(eagle.get_position(), self.hen.get_position(), GRID_SIZE * 0.8):
+                    # 彈開老鷹
+                    dx = eagle.x - self.hen.x
+                    dy = eagle.y - self.hen.y
+                    dist = math.sqrt(dx ** 2 + dy ** 2)
+                    if dist > 0:
+                        # 彈開方向
+                        eagle.vx = (dx / dist) * eagle.max_speed * 3
+                        eagle.vy = (dy / dist) * eagle.max_speed * 3
+                    eagle.stunned = True
+                    eagle.stun_timer = 90  # 暈眩 1.5 秒
+                    eagle.circling = False
+                    eagle.preparing = False
                 
                 # 檢查老鷹抓小雞
                 for chick in self.chicks[:]:
@@ -1168,13 +1286,32 @@ class Game:
                 
                 if not self.game_over:
                     if event.key == pygame.K_UP:
-                        self.hen.change_direction("UP")
-                    elif event.key == pygame.K_DOWN:
-                        self.hen.change_direction("DOWN")
+                        self.keys_pressed['up'] = True
                     elif event.key == pygame.K_LEFT:
-                        self.hen.change_direction("LEFT")
+                        self.keys_pressed['left'] = True
                     elif event.key == pygame.K_RIGHT:
-                        self.hen.change_direction("RIGHT")
+                        self.keys_pressed['right'] = True
+            
+            if event.type == pygame.KEYUP:
+                if not self.game_over:
+                    if event.key == pygame.K_UP:
+                        self.keys_pressed['up'] = False
+                    elif event.key == pygame.K_LEFT:
+                        self.keys_pressed['left'] = False
+                    elif event.key == pygame.K_RIGHT:
+                        self.keys_pressed['right'] = False
+        
+        # 根據按鍵狀態更新母雞方向
+        if not self.game_over:
+            if self.keys_pressed['left']:
+                self.hen.change_direction("LEFT")
+            if self.keys_pressed['right']:
+                self.hen.change_direction("RIGHT")
+            if self.keys_pressed['up']:
+                self.hen.change_direction("UP")
+            else:
+                # 不按上鍵時停止移動
+                self.hen.change_direction("STOP")
         
         return True
     
