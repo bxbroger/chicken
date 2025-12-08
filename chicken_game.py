@@ -725,7 +725,8 @@ class Eagle:
         # 盤旋時間倒數
         self.hover_timer -= 1
         if self.hover_timer <= 0:
-            self.leaving = True
+            # 盤旋結束後,轉為普通老鷹,開始追小雞
+            self.is_hovering = False
     
     def seek(self, target_x, target_y):
         """追逐目標"""
@@ -1232,13 +1233,13 @@ class Game:
                 # 如果離開螢幕，移除老鷹
                 if eagle.is_off_screen():
                     self.eagles.remove(eagle)
-            elif eagle.is_hovering:
-                # 盤旋老鷹只會盤旋,不會追小雞
+            elif eagle.is_hovering and eagle.hover_timer > 0:
+                # 盤旋老鷹在盤旋時間內只會盤旋,不會追小雞
                 # 如果被凍結，不移動
                 if POWERUP_FREEZE not in self.active_powerups:
-                    eagle.hover_move()
-                
-                # 盤旋老鷹碰到小雞也會抓
+                    eagle.hover_move()                
+
+                # 盤旋老鷹也會抓小雞(如果碰到的話)
                 if not eagle.has_caught:
                     for chick in self.chicks[:]:
                         if self.check_collision(eagle.get_position(), chick.get_position(), GRID_SIZE):
