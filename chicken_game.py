@@ -190,33 +190,55 @@ class Chick:
         self.wing_offset = 0  # 翅膀擺動
         self.blink_timer = 0  # 眼睛眨眼計時器
         self.is_blinking = False  # 是否正在眨眼
+        self.angle = 0  # 旋轉角度（弧度）
     
-    def update_position(self, x, y, prev_x=None, all_objects=[]):
-        """更新位置，像貪食蛇一樣跟隨，但避免重疊"""
-        # 根據移動方向更新面向
-        if prev_x is not None and abs(x - prev_x) > 0.1:
-            self.facing_right = x > prev_x
+    def update_position(self, x, y, prev_x=None, prev_y=None, all_objects=[]):
+        """更新位置,像貪食蛇一樣跟隨,但避免重疊"""
+        # 計算目標位置的角度
+        dx_to_target = x - self.x
+        dy_to_target = y - self.y
+        distance_to_target = math.sqrt(dx_to_target ** 2 + dy_to_target ** 2)
         
-        # 設定目標位置
-        self.x = x
-        self.y = y
+        # 平滑移動到目標位置
+        move_speed = 0.3  # 移動速度(0-1之間,越大越快)
+        if distance_to_target > 0.5:  # 只有距離夠遠才移動
+            self.x += dx_to_target * move_speed
+            self.y += dy_to_target * move_speed
+            # 根據移動方向計算角度
+            self.angle = math.atan2(dy_to_target, dx_to_target)
+            self.facing_right = abs(self.angle) < math.pi / 2
+        elif prev_x is not None and prev_y is not None:
+            # 如果已經很接近目標,使用傳入的方向來計算角度
+            dx = x - prev_x
+            dy = y - prev_y
+            if abs(dx) > 0.1 or abs(dy) > 0.1:
+                self.angle = math.atan2(dy, dx)
+                self.facing_right = abs(self.angle) < math.pi / 2
         
-        # 檢查與其他物件的碰撞
-        for obj in all_objects:
-            if obj is self:
-                continue
-            obj_pos = obj.get_position() if hasattr(obj, 'get_position') else (obj.x, obj.y)
-            dx = self.x - obj_pos[0]
-            dy = self.y - obj_pos[1]
-            dist = math.sqrt(dx ** 2 + dy ** 2)
+        # 多次迭代解決碰撞,確保沒有重疊
+        for iteration in range(3):  # 進行3次迭代
+            moved = False
+            # 檢查與其他物件的碰撞
+            for obj in all_objects:
+                if obj is self:
+                    continue
+                obj_pos = obj.get_position() if hasattr(obj, 'get_position') else (obj.x, obj.y)
+                dx = self.x - obj_pos[0]
+                dy = self.y - obj_pos[1]
+                dist = math.sqrt(dx ** 2 + dy ** 2)
+                
+                # 如果太近,調整位置
+                min_distance = GRID_SIZE * 0.8  # 稍微增加最小距離確保不重疊
+                if dist < min_distance and dist > 0:
+                    # 推開到最小距離
+                    push_amount = min_distance - dist
+                    self.x += (dx / dist) * push_amount
+                    self.y += (dy / dist) * push_amount
+                    moved = True
             
-            # 如果太近，調整位置
-            min_distance = GRID_SIZE * 0.7
-            if dist < min_distance and dist > 0:
-                # 推開到最小距離
-                push_amount = min_distance - dist
-                self.x += (dx / dist) * push_amount
-                self.y += (dy / dist) * push_amount
+            # 如果這次迭代沒有移動,表示已經沒有碰撞了
+            if not moved:
+                break
         
         # 邊界檢查
         self.x = max(0, min(self.x, WINDOW_WIDTH - self.size))
@@ -239,58 +261,89 @@ class Chick:
         return (self.x, self.y)
     
     def draw(self, screen):
-        # 計算方向偏移(左右翻轉)
-        direction = 1 if self.facing_right else -1
-        center_x = self.x + self.size * 0.5
+        # 創建一個臨時表面來繪製小雞(然後旋轉)
+        temp_size = int(self.size * 2)  # 給旋轉留足夠空間
+        temp_surface = pygame.Surface((temp_size, temp_size), pygame.SRCALPHA)
         
-        # 身體 (圓形,輕微跳躍)
-        pygame.draw.circle(screen, YELLOW, (int(center_x), int(self.y + self.size * 0.6 - self.hop_offset)), 8)
-        # 頭部 (小圓形)
-        pygame.draw.circle(screen, YELLOW, (int(center_x), int(self.y + 5 - self.hop_offset)), 5)
+        # 在臨時表面的中心繪製小雞(面向右,俯視角度)
+        center_x = temp_size / 2
+        center_y = temp_size / 2
         
-        # 翅膀 (小橢圓,會擺動) - 根據方向顯示在不同側
-        wing_y = self.y + 10 - self.hop_offset + self.wing_offset
-        if self.facing_right:
-            # 面向右側:左翅在背後,右翅在前面
-            pygame.draw.ellipse(screen, (200, 150, 0), (int(center_x - 8), int(wing_y), 5, 6))  # 左翅(背後,較暗)
-            pygame.draw.ellipse(screen, ORANGE, (int(center_x + 3), int(wing_y - self.wing_offset), 5, 6))  # 右翅(前面)
-        else:
-            # 面向左側:右翅在背後,左翅在前面
-            pygame.draw.ellipse(screen, (200, 150, 0), (int(center_x + 3), int(wing_y), 5, 6))  # 右翅(背後,較暗)
-            pygame.draw.ellipse(screen, ORANGE, (int(center_x - 8), int(wing_y - self.wing_offset), 5, 6))  # 左翅(前面)
+        # 身體 (黃色橢圓,俯視角度)
+        body_width = 12
+        body_height = 10
+        pygame.draw.ellipse(temp_surface, YELLOW, 
+                          (int(center_x - body_width/2), int(center_y - body_height/2), 
+                           body_width, body_height))
+        # 身體陰影
+        pygame.draw.ellipse(temp_surface, (200, 180, 0), 
+                          (int(center_x - body_width/2 + 2), int(center_y - body_height/2 + 2), 
+                           body_width - 4, body_height - 4))
         
-        # 眼睛位置(根據方向調整,顯示在面向側)
-        if self.facing_right:
-            eye_x = center_x + 3  # 眼睛在右側
-        else:
-            eye_x = center_x - 3  # 眼睛在左側
-        eye_y = self.y + 4 - self.hop_offset
+        # 頭部位置(在身體前方)
+        head_distance = 6
+        head_x = center_x + head_distance
+        head_y = center_y
         
+        # 脖子(連接身體和頭部)
+        pygame.draw.line(temp_surface, YELLOW, (int(center_x), int(center_y)), 
+                        (int(head_x - 2), int(head_y)), 3)
+        
+        # 頭部 (圓形)
+        head_radius = 4
+        pygame.draw.circle(temp_surface, YELLOW, (int(head_x), int(head_y)), head_radius)
+        pygame.draw.circle(temp_surface, (200, 180, 0), (int(head_x), int(head_y)), head_radius, 1)
+        
+        # 眼睛(兩側各一個)
+        eye_offset = 2
         if not self.is_blinking:
-            # 眼睛外圈 (白色)
-            pygame.draw.circle(screen, WHITE, (int(eye_x), int(eye_y)), 2)
-            # 眼珠 (黑色)
-            pygame.draw.circle(screen, BLACK, (int(eye_x), int(eye_y)), 1)
+            # 上眼睛
+            pygame.draw.circle(temp_surface, BLACK, (int(head_x + 1), int(head_y - eye_offset)), 1)
+            # 下眼睛
+            pygame.draw.circle(temp_surface, BLACK, (int(head_x + 1), int(head_y + eye_offset)), 1)
         else:
             # 眨眼時畫線
-            pygame.draw.line(screen, BLACK, (int(eye_x - 1), int(eye_y)), (int(eye_x + 1), int(eye_y)), 1)
+            pygame.draw.line(temp_surface, BLACK, 
+                           (int(head_x), int(head_y - eye_offset)), 
+                           (int(head_x + 2), int(head_y - eye_offset)), 1)
+            pygame.draw.line(temp_surface, BLACK, 
+                           (int(head_x), int(head_y + eye_offset)), 
+                           (int(head_x + 2), int(head_y + eye_offset)), 1)
         
-        # 嘴巴 (橘色小三角形,根據方向調整,指向移動方向)
-        beak_tip_x = center_x + (4 * direction)
+        # 嘴巴 (橘色小三角形,指向前方)
+        beak_length = 3
+        beak_tip_x = head_x + head_radius + beak_length
         beak_points = [
-            (center_x, self.y + 6 - self.hop_offset),
-            (beak_tip_x, self.y + 7 - self.hop_offset),
-            (center_x, self.y + 8 - self.hop_offset)
+            (int(beak_tip_x), int(head_y)),
+            (int(head_x + head_radius), int(head_y - 1.5)),
+            (int(head_x + head_radius), int(head_y + 1.5))
         ]
-        pygame.draw.polygon(screen, ORANGE, beak_points)
+        pygame.draw.polygon(temp_surface, ORANGE, beak_points)
         
-        # 腳 (橘色細線,跳躍時腳會縮短)
-        leg_length = 2 - self.hop_offset * 0.3
-        leg1_x = center_x - 2
-        leg2_x = center_x + 2
-        pygame.draw.line(screen, ORANGE, (int(leg1_x), int(self.y + 16 - self.hop_offset)), (int(leg1_x - 2), int(self.y + 16 + leg_length)), 2)
-        pygame.draw.line(screen, ORANGE, (int(leg2_x), int(self.y + 16 - self.hop_offset)), (int(leg2_x + 2), int(self.y + 16 + leg_length)), 2)
-        pygame.draw.line(screen, ORANGE, (int(leg2_x), int(self.y + 16 - self.hop_offset)), (int(leg2_x + 2), int(self.y + 16 + leg_length)), 2)
+        # 翅膀 (小橢圓,在身體兩側,會擺動)
+        wing_width = 5
+        wing_height = 4
+        # 上翅膀
+        pygame.draw.ellipse(temp_surface, (200, 180, 0), 
+                          (int(center_x - wing_width/2), 
+                           int(center_y - body_height/2 - 2 + self.wing_offset), 
+                           wing_width, wing_height))
+        # 下翅膀
+        pygame.draw.ellipse(temp_surface, YELLOW, 
+                          (int(center_x - wing_width/2), 
+                           int(center_y + body_height/2 - 2 - self.wing_offset), 
+                           wing_width, wing_height))
+        
+        # 旋轉表面
+        angle_degrees = -math.degrees(self.angle)  # 負號因為 pygame 的旋轉方向
+        rotated_surface = pygame.transform.rotate(temp_surface, angle_degrees)
+        
+        # 計算旋轉後的位置偏移
+        rotated_rect = rotated_surface.get_rect()
+        rotated_rect.center = (int(self.x + self.size * 0.5), int(self.y + self.size * 0.5))
+        
+        # 繪製到主螢幕
+        screen.blit(rotated_surface, rotated_rect.topleft)
 
 class Egg:
     """雞蛋類別"""
@@ -327,26 +380,40 @@ class FollowingEgg:
     
     def update_position(self, x, y, all_objects=[]):
         """更新位置，避免重疊"""
-        # 設定目標位置
-        self.x = x
-        self.y = y
+        # 平滑移動到目標位置
+        dx_to_target = x - self.x
+        dy_to_target = y - self.y
+        distance_to_target = math.sqrt(dx_to_target ** 2 + dy_to_target ** 2)
         
-        # 檢查與其他物件的碰撞
-        for obj in all_objects:
-            if obj is self:
-                continue
-            obj_pos = obj.get_position() if hasattr(obj, 'get_position') else (obj.x, obj.y)
-            dx = self.x - obj_pos[0]
-            dy = self.y - obj_pos[1]
-            dist = math.sqrt(dx ** 2 + dy ** 2)
+        move_speed = 0.3  # 移動速度(0-1之間,越大越快)
+        if distance_to_target > 0.5:  # 只有距離夠遠才移動
+            self.x += dx_to_target * move_speed
+            self.y += dy_to_target * move_speed
+        
+        # 多次迭代解決碰撞，確保沒有重疊
+        for iteration in range(3):  # 進行3次迭代
+            moved = False
+            # 檢查與其他物件的碰撞
+            for obj in all_objects:
+                if obj is self:
+                    continue
+                obj_pos = obj.get_position() if hasattr(obj, 'get_position') else (obj.x, obj.y)
+                dx = self.x - obj_pos[0]
+                dy = self.y - obj_pos[1]
+                dist = math.sqrt(dx ** 2 + dy ** 2)
+                
+                # 如果太近，調整位置
+                min_distance = GRID_SIZE * 0.8  # 稍微增加最小距離確保不重疊
+                if dist < min_distance and dist > 0:
+                    # 推開到最小距離
+                    push_amount = min_distance - dist
+                    self.x += (dx / dist) * push_amount
+                    self.y += (dy / dist) * push_amount
+                    moved = True
             
-            # 如果太近，調整位置
-            min_distance = GRID_SIZE * 0.7
-            if dist < min_distance and dist > 0:
-                # 推開到最小距離
-                push_amount = min_distance - dist
-                self.x += (dx / dist) * push_amount
-                self.y += (dy / dist) * push_amount
+            # 如果這次迭代沒有移動，表示已經沒有碰撞了
+            if not moved:
+                break
         
         # 邊界檢查
         self.x = max(0, min(self.x, WINDOW_WIDTH - self.size))
@@ -510,7 +577,7 @@ class Eagle:
         self.size = GRID_SIZE
         self.is_special = is_special
         self.is_hovering = is_hovering  # 是否為盤旋老鷹
-        self.base_speed = 1.8 if is_special else 1.2  # 降低起始速度
+        self.base_speed = 2 if is_special else 1.4  # 降低起始速度
         self.speed = self.base_speed
         self.has_caught = False  # 是否已抓到小雞
         self.caught_chick = None  # 被抓到的小雞
@@ -788,39 +855,56 @@ class Eagle:
         return (self.x, self.y)
     
     def draw(self, screen):
-        # 盤旋老鷹使用不同顏色(灰色)
+        # 為所有老鷹繪製陰影
         if self.is_hovering:
             color = (100, 100, 100)
             wing_color = (80, 80, 80)
+            scale = 1.5  # 盤旋老鷹放大1.5倍
+            shadow_offset_y = 25  # 盤旋老鷹陰影偏移更大
         elif self.is_special:
             color = PURPLE
             wing_color = (80, 0, 80)
+            scale = 1.0
+            shadow_offset_y = 20  # 普通飛行高度的陰影
         else:
             color = DARK_RED
             wing_color = (100, 0, 0)
+            scale = 1.0
+            shadow_offset_y = 20  # 普通飛行高度的陰影
+        
+        # 先繪製陰影(在地面上的投影,要在老鷹之前繪製)
+        shadow_width = int(self.size * scale * 1.2)
+        shadow_height = int(self.size * scale * 0.4)
+        # 計算陰影置中的 x 偏移
+        shadow_offset_x = int(self.size / 2 - shadow_width / 2)
+        # 創建帶透明度的陰影表面
+        shadow_surface = pygame.Surface((shadow_width, shadow_height), pygame.SRCALPHA)
+        # 繪製半透明橢圓陰影
+        pygame.draw.ellipse(shadow_surface, (0, 0, 0, 80), (0, 0, shadow_width, shadow_height))
+        screen.blit(shadow_surface, (int(self.x + shadow_offset_x), int(self.y + shadow_offset_y)))
         
         # 身體 (橢圓形)
-        pygame.draw.ellipse(screen, color, (int(self.x + 4), int(self.y + 2), self.size - 8, self.size - 4))
+        pygame.draw.ellipse(screen, color, (int(self.x + 4), int(self.y + 2), int((self.size - 8) * scale), int((self.size - 4) * scale)))
         # 頭部 (圓形)
-        pygame.draw.circle(screen, color, (int(self.x + self.size // 2), int(self.y + 4)), 6)
+        pygame.draw.circle(screen, color, (int(self.x + self.size // 2), int(self.y + 4)), int(6 * scale))
         # 嘴巴 (尖銳的喙)
         beak_points = [
             (int(self.x + self.size // 2), int(self.y + 4)),
-            (int(self.x + self.size // 2 - 2), int(self.y + 6)),
-            (int(self.x + self.size // 2 + 2), int(self.y + 6))
+            (int(self.x + self.size // 2 - 2 * scale), int(self.y + 6)),
+            (int(self.x + self.size // 2 + 2 * scale), int(self.y + 6))
         ]
         pygame.draw.polygon(screen, ORANGE, beak_points)
         # 眼睛 (銳利的眼神)
-        pygame.draw.circle(screen, YELLOW, (int(self.x + self.size // 2 - 2), int(self.y + 3)), 2)
-        pygame.draw.circle(screen, YELLOW, (int(self.x + self.size // 2 + 2), int(self.y + 3)), 2)
-        pygame.draw.circle(screen, BLACK, (int(self.x + self.size // 2 - 2), int(self.y + 3)), 1)
-        pygame.draw.circle(screen, BLACK, (int(self.x + self.size // 2 + 2), int(self.y + 3)), 1)
+        pygame.draw.circle(screen, YELLOW, (int(self.x + self.size // 2 - 2 * scale), int(self.y + 3)), int(2 * scale))
+        pygame.draw.circle(screen, YELLOW, (int(self.x + self.size // 2 + 2 * scale), int(self.y + 3)), int(2 * scale))
+        pygame.draw.circle(screen, BLACK, (int(self.x + self.size // 2 - 2 * scale), int(self.y + 3)), int(1 * scale))
+        pygame.draw.circle(screen, BLACK, (int(self.x + self.size // 2 + 2 * scale), int(self.y + 3)), int(1 * scale))
         # 左翅膀 (更大更細緻,會拍打)
         left_wing = [
             (int(self.x + 3), int(self.y + 8)),
-            (int(self.x - 6), int(self.y + 2 + self.wing_flap)),
-            (int(self.x - 8), int(self.y + 6 + self.wing_flap)),
-            (int(self.x - 5), int(self.y + 12 + self.wing_flap * 0.5)),
+            (int(self.x - 6 * scale), int(self.y + 2 + self.wing_flap)),
+            (int(self.x - 8 * scale), int(self.y + 6 + self.wing_flap)),
+            (int(self.x - 5 * scale), int(self.y + 12 + self.wing_flap * 0.5)),
             (int(self.x + 2), int(self.y + 10))
         ]
         pygame.draw.polygon(screen, wing_color, left_wing)
@@ -828,16 +912,16 @@ class Eagle:
         # 右翅膀 (拍打方向相反)
         right_wing = [
             (int(self.x + self.size - 3), int(self.y + 8)),
-            (int(self.x + GRID_SIZE + 6), int(self.y + 2 - self.wing_flap)),
-            (int(self.x + GRID_SIZE + 8), int(self.y + 6 - self.wing_flap)),
-            (int(self.x + GRID_SIZE + 5), int(self.y + 12 - self.wing_flap * 0.5)),
+            (int(self.x + GRID_SIZE + 6 * scale), int(self.y + 2 - self.wing_flap)),
+            (int(self.x + GRID_SIZE + 8 * scale), int(self.y + 6 - self.wing_flap)),
+            (int(self.x + GRID_SIZE + 5 * scale), int(self.y + 12 - self.wing_flap * 0.5)),
             (int(self.x + self.size - 2), int(self.y + 10))
         ]
         pygame.draw.polygon(screen, wing_color, right_wing)
         pygame.draw.polygon(screen, BLACK, right_wing, 1)
         # 爪子 (銳利的爪子)
-        pygame.draw.line(screen, BLACK, (int(self.x + 7), int(self.y + self.size - 2)), (int(self.x + 5), int(self.y + self.size + 2)), 2)
-        pygame.draw.line(screen, BLACK, (int(self.x + 13), int(self.y + self.size - 2)), (int(self.x + 15), int(self.y + self.size + 2)), 2)
+        pygame.draw.line(screen, BLACK, (int(self.x + 7), int(self.y + self.size - 2)), (int(self.x + 5), int(self.y + self.size + 2)), int(2 * scale))
+        pygame.draw.line(screen, BLACK, (int(self.x + 13), int(self.y + self.size - 2)), (int(self.x + 15), int(self.y + self.size + 2)), int(2 * scale))
         # 如果抓到小雞,繪製小雞在老鷹爪下(小雞會掙扎)
         if self.caught_chick:
             struggle = math.sin(self.animation_frame * 0.6) * 1.5
@@ -887,6 +971,7 @@ class Game:
         self.chicks = []
         self.following_eggs = []  # 跟隨的蛋列表
         self.position_history = deque(maxlen=1000)  # 存儲位置歷史
+        self.last_angle = 0  # 記錄母雞上次的角度
         self.eggs = [Egg()]
         self.eagles = []
         self.powerups = []  # 道具列表
@@ -920,7 +1005,6 @@ class Game:
             eagle = Eagle(is_special=False, is_hovering=False)
         
         eagle.speed = eagle.base_speed * self.difficulty_multiplier
-        self.eagles.append(eagle)
         self.eagles.append(eagle)
     
     def spawn_powerup(self):
@@ -1002,41 +1086,95 @@ class Game:
         # 移動母雞
         self.hen.move([])
         current_pos = self.hen.get_position()
+        current_angle = self.hen.angle
         
-        # 只在母雞實際移動時才記錄位置(避免停止時重疊)
+        # 檢查母雞是否移動或轉向
+        should_record = False
         if len(self.position_history) == 0:
-            self.position_history.append(current_pos)
+            should_record = True
         else:
             last_pos = self.position_history[-1]
-            # 只有當位置變化超過一定距離才記錄
-            if abs(current_pos[0] - last_pos[0]) > 0.5 or abs(current_pos[1] - last_pos[1]) > 0.5:
-                self.position_history.append(current_pos)
+            # 位置變化超過一定距離
+            position_changed = abs(current_pos[0] - last_pos[0]) > 0.5 or abs(current_pos[1] - last_pos[1]) > 0.5
+            # 角度變化超過一定值(約5.7度)
+            angle_changed = abs(current_angle - self.last_angle) > 0.1
+            should_record = position_changed or angle_changed
+        
+        if should_record:
+            self.position_history.append(current_pos)
+            self.last_angle = current_angle
         
         # 計算跟隨間距
-        follow_spacing = 8  # 每個物件之間的間距
+        follow_spacing = GRID_SIZE * 1.2  # 每個物件之間的間距
         
         # 建立所有物件列表用於碰撞檢測
         all_objects = [self.hen] + self.following_eggs + self.chicks
         
-        # 更新跟隨的蛋位置
-        if len(self.position_history) > follow_spacing:
-            for i, following_egg in enumerate(self.following_eggs):
-                # 每個蛋跟隨在母雞後面
-                history_index = -(i + 1) * follow_spacing
-                if abs(history_index) <= len(self.position_history):
-                    pos = self.position_history[history_index]
-                    following_egg.update_position(pos[0], pos[1], all_objects)
+        # 更新跟隨的蛋位置 - 每個蛋跟隨前一個物件的正後方
+        for i, following_egg in enumerate(self.following_eggs):
+            if i == 0:
+                # 第一個蛋跟隨母雞
+                leader_x = self.hen.x + self.hen.size * 0.5
+                leader_y = self.hen.y + self.hen.size * 0.5
+                leader_angle = self.hen.angle
+            else:
+                # 後續的蛋跟隨前一個蛋
+                prev_egg = self.following_eggs[i - 1]
+                leader_x = prev_egg.x + prev_egg.size * 0.5
+                leader_y = prev_egg.y + prev_egg.size * 0.5
+                # 計算前一個蛋相對於它前面物件的角度
+                if i == 1:
+                    # 第二個蛋:計算第一個蛋相對於母雞的角度
+                    dx = prev_egg.x - self.hen.x
+                    dy = prev_egg.y - self.hen.y
+                else:
+                    # 後續的蛋:計算前一個蛋相對於更前面的蛋的角度
+                    prev_prev_egg = self.following_eggs[i - 2]
+                    dx = prev_egg.x - prev_prev_egg.x
+                    dy = prev_egg.y - prev_prev_egg.y
+                
+                if abs(dx) > 0.1 or abs(dy) > 0.1:
+                    leader_angle = math.atan2(dy, dx)
+                else:
+                    leader_angle = self.hen.angle
+            
+            target_x = leader_x - math.cos(leader_angle) * follow_spacing - following_egg.size * 0.5
+            target_y = leader_y - math.sin(leader_angle) * follow_spacing - following_egg.size * 0.5
+            following_egg.update_position(target_x, target_y, all_objects)
         
-        # 更新小雞位置
-        if len(self.position_history) > follow_spacing:
-            for i, chick in enumerate(self.chicks):
-                # 小雞跟隨在蛋後面
-                history_index = -(len(self.following_eggs) + i + 1) * follow_spacing
-                if abs(history_index) <= len(self.position_history):
-                    pos = self.position_history[history_index]
-                    prev_pos = self.position_history[history_index + 1] if abs(history_index + 1) <= len(self.position_history) else None
-                    prev_x = prev_pos[0] if prev_pos else None
-                    chick.update_position(pos[0], pos[1], prev_x, all_objects)
+        # 更新小雞位置 - 每隻小雞跟隨前一個物件的正後方
+        for i, chick in enumerate(self.chicks):
+            if i == 0 and len(self.following_eggs) > 0:
+                # 第一隻小雞跟隨最後一個蛋
+                last_egg = self.following_eggs[-1]
+                leader_x = last_egg.x + last_egg.size * 0.5
+                leader_y = last_egg.y + last_egg.size * 0.5
+                # 計算蛋的角度
+                if len(self.following_eggs) > 1:
+                    prev_egg = self.following_eggs[-2]
+                    leader_angle = math.atan2(last_egg.y - prev_egg.y, last_egg.x - prev_egg.x)
+                else:
+                    leader_angle = self.hen.angle
+            elif i == 0:
+                # 沒有蛋時,第一隻小雞直接跟隨母雞
+                leader_x = self.hen.x + self.hen.size * 0.5
+                leader_y = self.hen.y + self.hen.size * 0.5
+                leader_angle = self.hen.angle
+            else:
+                # 後續小雞跟隨前一隻小雞
+                prev_chick = self.chicks[i - 1]
+                leader_x = prev_chick.x + prev_chick.size * 0.5
+                leader_y = prev_chick.y + prev_chick.size * 0.5
+                leader_angle = prev_chick.angle
+            
+            target_x = leader_x - math.cos(leader_angle) * follow_spacing - chick.size * 0.5
+            target_y = leader_y - math.sin(leader_angle) * follow_spacing - chick.size * 0.5
+            
+            # 傳遞前一個位置來計算角度
+            chick.update_position(target_x, target_y, 
+                                leader_x - chick.size * 0.5, 
+                                leader_y - chick.size * 0.5, 
+                                all_objects)
         
         # 檢查蛋是否準備好孵化
         for following_egg in self.following_eggs[:]:
